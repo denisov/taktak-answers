@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/denisov/taktak-answers/models"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,11 +27,13 @@ func parseSolutions() {
 func parsePage(page int) {
 	urlToParse := fmt.Sprintf("https://taktaktak.ru/problems/solved/?page=%d&ajax=2", page)
 	log.Println(urlToParse)
-	doc, err := goquery.NewDocument(urlToParse)
-	time.Sleep(2 * time.Second)
+
+	resp := getResponse(urlToParse)
+	doc, err := goquery.NewDocumentFromResponse(resp)
 	if err != nil {
-		log.Fatalf("Не могу открыть URL: %s. %s", urlToParse, err)
+		log.Fatalf("Не могу создать документ для парсинга URL: %s. %s", urlToParse, err)
 	}
+	time.Sleep(2 * time.Second)
 	doc.Find(".item").Each(func(i int, selection *goquery.Selection) {
 		title := selection.Find(".content .title a").First()
 		problemPageUrl, exists := title.Attr("href")
@@ -63,10 +67,12 @@ func parsePage(page int) {
 // parseProblemPage получает дату первого решения со страницы проблемы
 func parseProblemPage(problemId int) {
 	urlToParse := fmt.Sprintf("https://taktaktak.ru/problem/%d", problemId)
-	doc, err := goquery.NewDocument(urlToParse)
+
+	resp := getResponse(urlToParse)
+	doc, err := goquery.NewDocumentFromResponse(resp)
 	time.Sleep(2 * time.Second)
 	if err != nil {
-		log.Fatalf("Не могу открыть URL: %s. %s", urlToParse, err)
+		log.Fatalf("Не могу создать документ для парсинга URL: %s. %s", urlToParse, err)
 	}
 	answerDateText := doc.Find(".answer").First().Find(".date span").First().Text()
 	if answerDateText == "" {
@@ -79,4 +85,19 @@ func parseProblemPage(problemId int) {
 
 	log.Printf("%s \t=> %s сохраняем в базу\n", answerDateText, answerDate)
 	models.SolutionsAdd(problemId, answerDate)
+}
+
+func getResponse(urlToParse string) *http.Response {
+
+	// FIXME не надо каждый раз создавать
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	resp, err := client.Get(urlToParse)
+	if err != nil {
+		log.Fatalf("Не могу открыть URL: %s. %s", urlToParse, err)
+	}
+
+	return resp
 }
